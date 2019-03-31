@@ -15,6 +15,8 @@
 
 #include "core/Cutter.h"
 
+class QOpenGLWidget;
+
 class GraphView : public QAbstractScrollArea
 {
     Q_OBJECT
@@ -93,6 +95,7 @@ public:
 
     explicit GraphView(QWidget *parent);
     ~GraphView() override;
+
     void paintEvent(QPaintEvent *event) override;
 
     void showBlock(GraphBlock &block);
@@ -140,7 +143,6 @@ protected:
     virtual void wheelEvent(QWheelEvent *event) override;
     virtual EdgeConfiguration edgeConfiguration(GraphView::GraphBlock &from, GraphView::GraphBlock *to);
 
-    void drawGraph();
     bool event(QEvent *event) override;
 
     // Mouse events
@@ -155,12 +157,9 @@ protected:
     int width = 0;
     int height = 0;
 
-    /**
-     * @brief pixmap that caches the graph nodes
-     */
-    QPixmap pixmap;
-
 private:
+    void paintGraphCache();
+
     bool checkPointClicked(QPointF &point, int x, int y, bool above_y = false);
 
     ut64 entry;
@@ -181,6 +180,20 @@ private:
 
     // Todo: remove charheight/charwidth cause it should be handled in child class
     qreal charWidth = 10.0;
+
+
+    bool useGL;
+
+    /**
+     * @brief pixmap that caches the graph nodes
+     */
+    QPixmap pixmap;
+
+    uint32_t cacheTexture;
+    uint32_t cacheFBO;
+    QSize cacheSize;
+
+    QOpenGLWidget *glWidget;
 
     // Edge computing stuff
     template<typename T>

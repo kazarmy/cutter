@@ -5,10 +5,24 @@
 #include <QMouseEvent>
 #include <QPropertyAnimation>
 
+#include <QOpenGLContext>
+#include <QOpenGLWidget>
+#include <QOpenGLPaintDevice>
+#include <QOpenGLExtraFunctions>
+
 
 GraphView::GraphView(QWidget *parent)
-    : QAbstractScrollArea(parent)
+    : QAbstractScrollArea(parent),
+    useGL(true),
+    cacheTexture(0),
+    cacheFBO(0)
 {
+    if (useGL) {
+        glWidget = new QOpenGLWidget(this);
+        setViewport(glWidget);
+    } else {
+        glWidget = nullptr;
+    }
 }
 
 GraphView::~GraphView()
@@ -378,17 +392,80 @@ QPolygonF GraphView::recalculatePolygon(QPolygonF polygon)
     return ret;
 }
 
-void GraphView::paintEvent(QPaintEvent *event)
+void GraphView::paintEvent(QPaintEvent *)
 {
-    Q_UNUSED(event);
-    if (useCache) {
-        drawGraph();
-        return;
+    if (useGL) {
+        glWidget->makeCurrent();
     }
-    pixmap = QPixmap(viewport()->width(), viewport()->height());
-    QPainter p(&pixmap);
 
-    p.setRenderHint(QPainter::Antialiasing);
+    if(!useCache) {
+        paintGraphCache();
+    }
+
+    if (useGL) {
+        auto gl = glWidget->context()->extraFunctions();
+        gl->glBindFramebuffer(GL_READ_FRAMEBUFFER, cacheFBO);
+        gl->glBindFramebuffer(GL_DRAW_FRAMEBUFFER, glWidget->defaultFramebufferObject());
+        gl->glBlitFramebuffer(0, 0, viewport()->width(), viewport()->height(),
+                              0, 0, viewport()->width(), viewport()->height(),
+                              GL_COLOR_BUFFER_BIT, GL_NEAREST);
+        glWidget->doneCurrent();
+    } else {
+        QRectF target(0.0, 0.0, viewport()->width(), viewport()->height());
+        QRectF source(0.0, 0.0, viewport()->width(), viewport()->height());
+        QPainter p(viewport());
+        p.beginNativePainting();
+        p.fillRect(QRect(0, 0, 100, 100), Qt::red);
+        p.drawPixmap(target, pixmap, source);
+        p.endNativePainting();
+    }
+
+    if(!useCache) { // TODO: does this condition make sense?
+        emit refreshBlock();
+    }
+}
+
+void GraphView::paintGraphCache()
+{
+    QOpenGLPaintDevice *paintDevice = nullptr;
+    QPainter p;
+    if (useGL) {
+        auto gl = QOpenGLContext::currentContext()->functions();
+
+        bool resizeTex = false;
+        if (!cacheTexture) {
+            gl->glGenTextures(1, &cacheTexture);
+            gl->glBindTexture(GL_TEXTURE_2D, cacheTexture);
+            gl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+            gl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+            gl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+            gl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+            gl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+            resizeTex = true;
+        } else if(cacheSize != viewport()->size()) {
+            gl->glBindTexture(GL_TEXTURE_2D, cacheTexture);
+            resizeTex = true;
+        }
+        if (resizeTex) {
+            cacheSize = viewport()->size();
+            gl->glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, viewport()->width(), viewport()->height(), 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+            gl->glGenFramebuffers(1, &cacheFBO);
+            gl->glBindFramebuffer(GL_FRAMEBUFFER, cacheFBO);
+            gl->glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, cacheTexture, 0);
+        } else {
+            gl->glBindFramebuffer(GL_FRAMEBUFFER, cacheFBO);
+        }
+        gl->glViewport(0, 0, viewport()->width(), viewport()->height());
+        gl->glClearColor(1.0f, 0.0f, 0.0f, 1.0f);
+        gl->glClear(GL_COLOR_BUFFER_BIT);
+
+        paintDevice = new QOpenGLPaintDevice(viewport()->size());
+        p.begin(paintDevice);
+    } else {
+        pixmap = QPixmap(viewport()->width(), viewport()->height());
+        p.begin(&pixmap);
+        p.setRenderHint(QPainter::Antialiasing);
+    }
 
     int render_width = viewport()->width();
     int render_height = viewport()->height();
@@ -441,16 +518,9 @@ void GraphView::paintEvent(QPaintEvent *event)
             }
         }
     }
-    drawGraph();
-    emit refreshBlock();
-}
 
-void GraphView::drawGraph()
-{
-    QRectF target(0.0, 0.0, viewport()->width(), viewport()->height());
-    QRectF source(0.0, 0.0, viewport()->width(), viewport()->height());
-    QPainter p(viewport());
-    p.drawPixmap(target, pixmap, source);
+    p.end();
+    delete paintDevice;
 }
 
 // Prepare graph
