@@ -13,7 +13,7 @@ ninja -C "$jsdecdir\build_lib"
 # cmake is silly and expects .lib but meson generates the static lib as .a
 Copy-Item "$jsdecdir\build_lib\libjsdec.a" -Destination "$jsdecdir\build_lib\jsdec.lib"
 
-New-Item build_plugin -ItemType directory -Force
+mkdir build_plugin
 cd build_plugin
 cmake -G Ninja -DCMAKE_BUILD_TYPE=Release -DJSDEC_BUILD_DIR="$jsdecdir\build_lib" -DCMAKE_INSTALL_PREFIX="$dist" $cmake_opts "$jsdecdir\cutter-plugin"
 ninja install
