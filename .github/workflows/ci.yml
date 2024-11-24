@@ -431,8 +431,9 @@ jobs:
       run: |
         cd scripts
         rm /usr/local/bin/2to3* # symlink to some kind of existing python2.7 installation conflicts with brew python3 which gets installed as indirect dependency
-        brew unlink pkg-config
         brew bundle
+        brew unlink pkg-config
+        brew install pkg-config
         brew install kadwanev/brew/retry
     - name: py dependencies
       run: |
